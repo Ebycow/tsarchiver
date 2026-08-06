@@ -1,4 +1,4 @@
 @echo off
-cd /d "C:\path\to\tsarchiver"
-"C:\path\to\tsarchiver\.venv\Scripts\python.exe" "C:\path\to\tsarchiver\run.py"
+cd /d "%~dp0"
+"%~dp0.venv\Scripts\python.exe" "%~dp0run.py"
 pause

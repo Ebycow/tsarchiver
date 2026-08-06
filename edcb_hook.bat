@@ -1,5 +1,5 @@
 @echo off
 rem _EDCBX_DIRECT_
-echo ---- %date% %time% ---- >> "C:\path\to\tsarchiver\edcb_hook_debug.log"
-set >> "C:\path\to\tsarchiver\edcb_hook_debug.log"
-"C:\path\to\tsarchiver\.venv\Scripts\python.exe" "C:\path\to\tsarchiver\enqueue.py" "%FilePath%"
+echo ---- %date% %time% ---- >> "%~dp0edcb_hook_debug.log"
+set >> "%~dp0edcb_hook_debug.log"
+"%~dp0.venv\Scripts\python.exe" "%~dp0enqueue.py" "%FilePath%"
