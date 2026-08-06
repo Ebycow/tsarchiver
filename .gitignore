@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local config (machine-specific paths) - copy config.example.toml to config.toml
+config.toml
+
+# Runtime logs
+run.log
+run.err
+edcb_hook_debug.log
+
+# Queue runtime data (directory structure kept via .gitkeep)
+queue/pending/*
+queue/processing/*
+queue/done/*
+queue/failed/*
+!queue/**/.gitkeep
+
+# Third-party binaries (ffmpeg, Caption2Ass) - fetch separately, not stored in git
+bin/

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card">
+  <h2>キュー状況</h2>
+  <div class="counts">
+    <div class="count-box pending">
+      <div class="num">{{ counts.pending }}</div>
+      <div class="label">待機中</div>
+    </div>
+    <div class="count-box processing">
+      <div class="num">{{ counts.processing }}</div>
+      <div class="label">処理中</div>
+    </div>
+    <div class="count-box done">
+      <div class="num">{{ counts.done }}</div>
+      <div class="label">完了</div>
+    </div>
+    <div class="count-box failed">
+      <div class="num">{{ counts.failed }}</div>
+      <div class="label">失敗</div>
+    </div>
+  </div>
+</div>
+
+{% if current_job %}
+<div class="card">
+  <h2>処理中のジョブ</h2>
+  <p>
+    <strong>{{ current_job.get('base_id') or current_job.get('job_id') }}</strong><br>
+    <span class="mono">{{ current_job.get('ts_path', '') | replace('\\', '/') }}</span>
+  </p>
+  <div class="step-list">
+    {% for step in ['meta', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
+      {% set s = current_job.get('steps', {}).get(step, {}) %}
+      {% if s.get('status') == 'done' %}
+        <span class="step step-done">✓ {{ step }} ({{ s.get('duration_sec', '?') }}s)</span>
+      {% elif s.get('status') == 'running' %}
+        <span class="step step-running">⟳ {{ step }}</span>
+      {% else %}
+        <span class="step step-pending">{{ step }}</span>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% if current_job.get('started_at') %}
+  <p style="font-size:0.8rem;color:#888;margin-top:8px;">開始: {{ current_job.started_at }}</p>
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  <h2>処理中のジョブ</h2>
+  <p style="color:#888;">現在処理中のジョブはありません。</p>
+</div>
+{% endif %}
+
+{% endblock %}

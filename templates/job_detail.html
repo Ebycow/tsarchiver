@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card">
+  <h2>ジョブ詳細</h2>
+  <table>
+    <tr><th>Job ID</th><td class="mono">{{ job.get('job_id') }}</td></tr>
+    <tr><th>Base ID</th><td class="mono">{{ job.get('base_id', '（未確定）') }}</td></tr>
+    <tr><th>TSファイル</th><td class="mono">{{ job.get('ts_path', '') }}</td></tr>
+    <tr><th>出力先</th><td class="mono">{{ job.get('out_dir', '（未確定）') }}</td></tr>
+    <tr><th>エンキュー</th><td>{{ job.get('queued_at', '') }}</td></tr>
+    <tr><th>開始</th><td>{{ job.get('started_at', '—') }}</td></tr>
+    <tr><th>完了</th><td>{{ job.get('completed_at', job.get('failed_at', '—')) }}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>ステップ</h2>
+  <div class="step-list" style="margin-bottom:16px;">
+    {% for step in ['meta', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
+      {% set s = job.get('steps', {}).get(step, {}) %}
+      {% if s.get('status') == 'done' %}
+        <span class="step step-done">✓ {{ step }}</span>
+      {% elif s.get('status') == 'running' %}
+        <span class="step step-running">⟳ {{ step }}</span>
+      {% elif s.get('status') == 'pending' %}
+        <span class="step step-pending">{{ step }}</span>
+      {% else %}
+        <span class="step step-error">✗ {{ step }}</span>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <table>
+    <tr><th>ステップ</th><th>状態</th><th>所要時間</th><th>補足</th></tr>
+    {% for step in ['meta', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
+    {% set s = job.get('steps', {}).get(step, {}) %}
+    <tr>
+      <td>{{ step }}</td>
+      <td>{{ s.get('status', '—') }}</td>
+      <td>{{ s.get('duration_sec', '—') }}{% if s.get('duration_sec') %}s{% endif %}</td>
+      <td style="font-size:0.82rem;color:#555;">
+        {% if step == 'caption' %}字幕: {{ s.get('caption_count', '?') }}件 / スーパー: {{ s.get('super_count', '?') }}件
+        {% elif step == 'audio' %}トラック数: {{ s.get('tracks', '?') }}
+        {% elif step == 'phash' %}フレーム数: {{ s.get('frame_count', '?') }}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+{% if job.get('error') %}
+<div class="card">
+  <h2>エラー</h2>
+  <div class="error-box">{{ job.get('traceback') or job.get('error') }}</div>
+</div>
+{% endif %}
+
+{% endblock %}

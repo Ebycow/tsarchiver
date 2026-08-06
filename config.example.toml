@@ -1,0 +1,26 @@
+[paths]
+watch_dir       = "C:\\Recorded"
+archive_raw     = "C:\\Archive\\raw"
+archive_derived = "C:\\Archive\\derived"
+
+[queue]
+pending    = "queue\\pending"
+processing = "queue\\processing"
+done       = "queue\\done"
+failed     = "queue\\failed"
+
+[worker]
+poll_interval_sec = 3
+move_raw          = true   # true: 処理完了後に生TSをarchive_rawへ移動する（false: watch_dirに置いたまま）
+keep_raw_count    = 30     # archive_raw内に保持する生TSの最大件数。超過分は古い順（ファイル名昇順）に削除。0以下で無制限（move_raw=falseの場合は無視）
+
+[web]
+host = "127.0.0.1"
+port = 8000
+
+[processing]
+phash_fps          = 1
+thumb_interval_sec = 5
+thumb_width        = 320
+thumb_height       = 180
+opus_bitrate       = "48k"

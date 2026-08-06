@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="card">
+  <h2>完了ジョブ ({{ done | length }}件)</h2>
+  {% if done %}
+  <table>
+    <tr><th>番組</th><th>チャンネル</th><th>開始時刻</th><th>処理時間</th><th>詳細</th></tr>
+    {% for j in done %}
+    <tr>
+      <td>
+        {{ j.get('base_id', j.get('job_id', ''))[:25] }}<br>
+        {% for f in j.get('flags', []) %}<span class="tag">{{ f }}</span>{% endfor %}
+      </td>
+      <td class="mono" style="font-size:0.8rem;">{{ j.get('queued_at', '')[:16] }}</td>
+      <td class="mono" style="font-size:0.8rem;">{{ j.get('started_at', '')[:16] }}</td>
+      <td>
+        {% set total = namespace(s=0) %}
+        {% for step, info in j.get('steps', {}).items() %}
+          {% if info.get('duration_sec') %}{% set total.s = total.s + info.duration_sec %}{% endif %}
+        {% endfor %}
+        {{ "%.0f" | format(total.s) }}s
+      </td>
+      <td><a href="/jobs/{{ j.get('job_id') }}">→</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p style="color:#888;">まだありません。</p>
+  {% endif %}
+</div>
+
+{% if failed %}
+<div class="card">
+  <h2>失敗ジョブ ({{ failed | length }}件)</h2>
+  <table>
+    <tr><th>ジョブID</th><th>失敗ステップ</th><th>失敗時刻</th><th>詳細</th></tr>
+    {% for j in failed %}
+    <tr>
+      <td class="mono">{{ j.get('job_id', '') }}</td>
+      <td><span class="step step-error">{{ j.get('current_step', '?') }}</span></td>
+      <td class="mono" style="font-size:0.8rem;">{{ j.get('failed_at', '')[:16] }}</td>
+      <td><a href="/jobs/{{ j.get('job_id') }}">→</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}
