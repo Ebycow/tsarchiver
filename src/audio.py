@@ -2,6 +2,12 @@ import json
 import subprocess
 from pathlib import Path
 
+# A high-bitrate 1440x1080 video PID can dominate ffmpeg/ffprobe's default probing
+# window (~5MB / ~5s) badly enough that a second audio PID starting a few seconds in
+# (observed ~7.6s) never gets discovered. Force a generous window on every ffmpeg/ffprobe
+# invocation here so stream discovery is reliable regardless of default heuristics.
+_PROBE_ARGS = ["-analyzeduration", "15000000", "-probesize", "50000000"]
+
 
 def extract_audio(
     ts_path: Path,
@@ -68,10 +74,13 @@ def extract_audio(
         audio_mode = "mono"
 
     if audio_mode != "dual_mono":
+        # "-a 8" is included even here: omitting it changed tsreadex's output for a
+        # multi-PID source in testing (see module docstring context), so always pass it
+        # rather than relying on it being a no-op for non-dual-mono sources.
         out_path = out_dir / f"{base_id}.1.opus"
         _run_audio_extraction(
             ts_path, out_path,
-            tsreadex_args=["-n", "-1"],
+            tsreadex_args=["-n", "-1", "-a", "8"],
             ffmpeg_map="0:a:0",
             tsreadex_bin=tsreadex_bin,
             ffmpeg_bin=ffmpeg_bin,
@@ -95,7 +104,7 @@ def _probe_audio_stream_channels(ts_path: Path, tsreadex_bin: Path, ffprobe_bin:
         stderr=subprocess.DEVNULL,
     )
     proc_probe = subprocess.run(
-        [str(ffprobe_bin), "-v", "quiet", "-print_format", "json", "-show_streams", "pipe:0"],
+        [str(ffprobe_bin), "-v", "quiet", *_PROBE_ARGS, "-print_format", "json", "-show_streams", "pipe:0"],
         stdin=proc_ts.stdout,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -132,6 +141,7 @@ def _run_audio_extraction(
     proc_ff = subprocess.Popen(
         [
             str(ffmpeg_bin), "-y",
+            *_PROBE_ARGS,
             "-i", "pipe:0",
             "-map", ffmpeg_map,
             "-c:a", "libopus",
