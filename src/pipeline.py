@@ -78,11 +78,15 @@ def process_job(job_file: Path, cfg: cfg_mod.Config) -> None:
     # ── Step 3: audio ─────────────────────────────────────────────
     _step_start(job_file, "audio")
     t0 = time.time()
-    audio_paths = audio_mod.extract_audio(
+    audio_paths, actual_audio_mode = audio_mod.extract_audio(
         ts_path, out_dir, base_id,
         meta["audio"]["mode"],
-        cfg.tsreadex, cfg.ffmpeg, cfg.opus_bitrate,
+        cfg.tsreadex, cfg.ffmpeg, cfg.ffprobe, cfg.opus_bitrate,
     )
+    if actual_audio_mode != meta["audio"]["mode"]:
+        meta["audio"]["mode"] = actual_audio_mode
+        meta["audio"]["languages"] = meta["audio"]["languages"][:1] or ["jpn"]
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     _step_done(job_file, "audio", t0, tracks=len(audio_paths))
 
     # ── Step 4: phash ─────────────────────────────────────────────
@@ -108,7 +112,7 @@ def process_job(job_file: Path, cfg: cfg_mod.Config) -> None:
     # ── Step 6: verify ────────────────────────────────────────────
     _step_start(job_file, "verify")
     t0 = time.time()
-    _verify_outputs(out_dir, base_id, meta["audio"]["mode"])
+    _verify_outputs(out_dir, base_id, actual_audio_mode)
     _step_done(job_file, "verify", t0)
 
     # ── Step 7: archive raw (処理完了後にのみ移動) ──────────────────
