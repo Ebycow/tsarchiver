@@ -15,15 +15,27 @@ def extract_audio(
 ) -> tuple[list[Path], str]:
     """Extract audio as opus. Returns (output paths, actual audio_mode used).
 
-    The EPG-reported audio_mode (program.txt "デュアルモノ") is sometimes wrong:
-    breaking-news overrides can broadcast with only one audio track even though
-    the EPG entry still advertises dual mono. Probe the tsreadex output for the
-    real stream count and fall back to mono rather than failing the job.
+    The EPG-reported audio_mode (program.txt "デュアルモノ") is sometimes wrong: some
+    dual-mono broadcasts never get split into two PIDs by tsreadex -a 8 and stay as a
+    single AAC stream with the two languages sitting in channels 0/1. Probe the actual
+    stream layout and, when only one stream comes out, take channel 0 (the first-listed/
+    main language) only -- a plain "-ac 1" downmix would average both channels together
+    and audibly blend the two languages.
     """
     outputs: list[Path] = []
 
     if audio_mode == "dual_mono" and _count_audio_streams(ts_path, tsreadex_bin, ffprobe_bin) < 2:
-        audio_mode = "mono"
+        out_path = out_dir / f"{base_id}.1.opus"
+        _run_audio_extraction(
+            ts_path, out_path,
+            tsreadex_args=["-n", "-1", "-a", "8"],
+            ffmpeg_map="0:a:0",
+            tsreadex_bin=tsreadex_bin,
+            ffmpeg_bin=ffmpeg_bin,
+            opus_bitrate=opus_bitrate,
+            select_first_channel=True,
+        )
+        return [out_path], "mono"
 
     if audio_mode == "dual_mono":
         # tsreadex -a 8 splits dual-mono into two separate mono streams (PID 0x0110 + 0x0111)
@@ -88,7 +100,12 @@ def _run_audio_extraction(
     tsreadex_bin: Path,
     ffmpeg_bin: Path,
     opus_bitrate: str,
+    select_first_channel: bool = False,
 ) -> None:
+    # select_first_channel picks channel 0 verbatim (for an unsplit dual-mono stream);
+    # otherwise "-ac 1" downmixes normally (fine for genuine mono/stereo sources).
+    audio_args = ["-af", "pan=mono|c0=c0"] if select_first_channel else ["-ac", "1"]
+
     proc_ts = subprocess.Popen(
         [str(tsreadex_bin)] + tsreadex_args + [str(ts_path)],
         stdout=subprocess.PIPE,
@@ -101,7 +118,7 @@ def _run_audio_extraction(
             "-map", ffmpeg_map,
             "-c:a", "libopus",
             "-b:a", opus_bitrate,
-            "-ac", "1",
+            *audio_args,
             "-vn",
             str(out_path),
         ],
