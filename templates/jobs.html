@@ -34,12 +34,17 @@
 <div class="card">
   <h2>失敗ジョブ ({{ failed | length }}件)</h2>
   <table>
-    <tr><th>ジョブID</th><th>失敗ステップ</th><th>失敗時刻</th><th>詳細</th></tr>
+    <tr><th>ファイル</th><th>失敗ステップ</th><th>失敗時刻</th><th>エラー</th><th>詳細</th></tr>
     {% for j in failed %}
     <tr>
-      <td class="mono">{{ j.get('job_id', '') }}</td>
+      <td class="mono" style="font-size:0.8rem;" title="{{ j.get('ts_path', '') }}">
+        {{ j.get('ts_path', '').split('\\')[-1].split('/')[-1] or j.get('job_id', '') }}
+      </td>
       <td><span class="step step-error">{{ j.get('current_step', '?') }}</span></td>
       <td class="mono" style="font-size:0.8rem;">{{ j.get('failed_at', '')[:16] }}</td>
+      <td style="font-size:0.8rem;color:#555;" title="{{ j.get('error', '') }}">
+        {{ (j.get('error', '') | truncate(60)) }}
+      </td>
       <td><a href="/jobs/{{ j.get('job_id') }}">→</a></td>
     </tr>
     {% endfor %}
