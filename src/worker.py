@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 from . import config as cfg_mod
+from . import notify
 from . import pipeline
 
 JST = timezone(timedelta(hours=9))
@@ -75,3 +76,4 @@ def _process_one(job_file: Path, cfg: cfg_mod.Config) -> None:
         proc_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         dest = cfg.queue_failed / proc_file.name
         shutil.move(str(proc_file), str(dest))
+        notify.notify_discord_failure(cfg.discord_webhook_url, ts_name, str(e), tb)

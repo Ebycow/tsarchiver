@@ -24,3 +24,6 @@ thumb_interval_sec = 5
 thumb_width        = 320
 thumb_height       = 180
 opus_bitrate       = "48k"
+
+[discord]
+webhook_url = ""   # 録画データ処理失敗時に通知するDiscord webhook URL。空文字なら通知しない。

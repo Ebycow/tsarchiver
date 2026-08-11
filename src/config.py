@@ -24,6 +24,7 @@ class Config:
     thumb_width: int
     thumb_height: int
     opus_bitrate: str
+    discord_webhook_url: str
 
     @property
     def bin(self) -> Path:
@@ -73,4 +74,5 @@ def load(path: Path | None = None) -> Config:
         thumb_width=d["processing"]["thumb_width"],
         thumb_height=d["processing"]["thumb_height"],
         opus_bitrate=d["processing"]["opus_bitrate"],
+        discord_webhook_url=d.get("discord", {}).get("webhook_url", ""),
     )
