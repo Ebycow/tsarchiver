@@ -58,6 +58,13 @@ def process_job(job_file: Path, cfg: cfg_mod.Config) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     meta_path = out_dir / f"{base_id}.meta.json"
+    if meta_path.exists():
+        # 同じbase_idで別の録画の出力が既にある場合は上書きせず失敗させる
+        # (同じTSの再処理なら上書きしてよい)
+        existing = json.loads(meta_path.read_text(encoding="utf-8"))
+        existing_name = Path(existing.get("source", {}).get("original_path", "")).name
+        if existing_name and existing_name != ts_path.name:
+            raise RuntimeError(f"base_id collision: {out_dir} already holds outputs of {existing_name}")
     meta["derived"]["processed_at"] = _now()
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     _update_job(job_file, {"base_id": base_id, "out_dir": str(out_dir)})
@@ -135,6 +142,11 @@ def _archive_raw(
     """
     if not cfg.move_raw:
         return ts_path, program_txt, err_path
+    if ts_path.parent.resolve() == cfg.archive_raw.resolve():
+        # archive_raw 内のTSを再処理した場合は移動不要
+        meta["derived"]["raw_path"] = str(ts_path)
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        return ts_path, program_txt, err_path
 
     cfg.archive_raw.mkdir(parents=True, exist_ok=True)
 
@@ -201,7 +213,7 @@ def _verify_outputs(out_dir: Path, base_id: str, audio_mode: str) -> None:
         out_dir / f"{base_id}.phash.bin",
         out_dir / f"{base_id}.thumbs.zip",
     ]
-    if audio_mode == "dual_mono":
+    if audio_mode in ("dual_mono", "multi_audio"):
         required_nonempty.append(out_dir / f"{base_id}.2.opus")
 
     # 存在さえすれば空でも可（イベントがなかった場合）

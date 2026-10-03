@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import subprocess
@@ -41,18 +42,26 @@ def parse_program_txt(path: Path) -> dict:
     audio_languages: list[str] = []
     in_genre = False
     in_audio_lang = False
+    # 音声欄には音声コンポーネントが複数並ぶことがある（[二]の二か国語放送、[解]の解説音声など）。
+    # 例: "音声 : 2/0モード（ステレオ）" / "日本語" / "サンプリングレート : 48kHz" /
+    #     "2/0モード（ステレオ）" / "英語" / "サンプリングレート : 48kHz"
+    in_audio_block = False
+    want_component_lang = False
+    audio_components = 0
+    component_languages: list[str] = []
 
     for line in lines[3:]:
         if line.startswith("ジャンル"):
-            in_genre, in_audio_lang = True, False
+            in_genre, in_audio_lang, in_audio_block = True, False, False
             continue
         if line.startswith("映像"):
-            in_genre, in_audio_lang = False, False
+            in_genre, in_audio_lang, in_audio_block = False, False, False
             m2 = re.search(r"(\d{3,4}[ip]?)", line)
             result["video_resolution"] = m2.group(1) if m2 else ""
             continue
         if line.startswith("音声"):
-            in_genre = False
+            in_genre, in_audio_block, want_component_lang = False, True, True
+            audio_components = 1
             audio_line = line.split(":", 1)[-1]
             if "デュアルモノ" in audio_line:
                 audio_mode, in_audio_lang = "dual_mono", True
@@ -61,11 +70,22 @@ def parse_program_txt(path: Path) -> dict:
             else:
                 audio_mode = "mono"
             continue
-        if line.startswith("サンプリングレート"):
-            in_audio_lang = False
+        if in_audio_block and "モード" in line:
+            audio_components += 1
+            want_component_lang = True
             continue
+        if line.startswith("サンプリングレート"):
+            in_audio_lang = want_component_lang = False
+            continue
+        if in_audio_block and re.match(r"\w+ID:", line):
+            in_audio_block = False
+        if want_component_lang and line.strip():
+            component_languages.append(line.strip())
+            want_component_lang = False
         if in_audio_lang and line.strip():
             audio_languages.append(line.strip())
+            continue
+        if in_audio_block:
             continue
         if in_genre and line.strip():
             genres.append(line.strip())
@@ -80,6 +100,11 @@ def parse_program_txt(path: Path) -> dict:
             m3 = re.match(rf"{key}:(\d+)", line)
             if m3:
                 result[attr] = int(m3.group(1))
+
+    if audio_mode != "dual_mono" and audio_components >= 2:
+        # 別PIDの音声が複数ある（主音声・副音声）。audio.py で両方保存する
+        audio_mode = "multi_audio"
+        audio_languages = component_languages
 
     result["genres"] = genres
     result["audio_mode"] = audio_mode
@@ -151,7 +176,14 @@ def generate_base_id(meta: dict) -> str:
     sid = meta.get("sid") or 0
     eid = meta.get("eid")
     eid_str = f"e{eid:04x}" if eid is not None else "e0000"
-    return f"{ts_part}_{onid}-{tsid}-{sid}_{eid_str}"
+    base_id = f"{ts_part}_{onid}-{tsid}-{sid}_{eid_str}"
+    if not (onid and sid) or eid is None:
+        # .program.txt が無いとサービス/イベントを識別できず、同時刻に別チューナーで
+        # 録った番組同士が同じbase_idになって出力を上書きし合う。TSファイル名
+        # (EDCBが録画ごとに一意に付ける)のハッシュを付けて衝突を防ぐ。
+        name = Path(meta["source"]["original_path"]).name
+        base_id += "_" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:6]
+    return base_id
 
 
 _FNAME_DT_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\d*-")
