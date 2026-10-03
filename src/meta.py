@@ -122,8 +122,14 @@ def parse_err_file(path: Path) -> dict:
 
 
 def run_ffprobe(ts_path: Path, ffprobe_bin: Path) -> dict:
+    # 録画中にPIDが切り替わる(番組冒頭のごく短い断片が別PID構成で入る等の)TSでは、
+    # デフォルトの探索窓だと切り替え後の本編PIDまで見つけきれず、コンテナ全体の
+    # format.durationが取れずに0になることがある。audio.pyの_PROBE_ARGSと同じ値で
+    # 探索窓を広げ、確実に本編PIDまで見つける。
     r = subprocess.run(
-        [str(ffprobe_bin), "-v", "quiet", "-print_format", "json",
+        [str(ffprobe_bin), "-v", "quiet",
+         "-analyzeduration", "15000000", "-probesize", "50000000",
+         "-print_format", "json",
          "-show_streams", "-show_format", str(ts_path)],
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     )

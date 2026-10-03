@@ -149,7 +149,7 @@ def generate_thumbs(
             str(ffmpeg_bin), "-y",
             "-i", "pipe:0",
             "-vf", f"yadif=0,fps=1/{thumb_interval_sec},scale={thumb_width}:{thumb_height}",
-            "-q:v", "5",
+            "-q:v", "8",
             str(tmp_dir / "%09d.jpg"),
         ],
         stdin=proc_ts.stdout,

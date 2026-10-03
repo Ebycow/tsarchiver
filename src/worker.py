@@ -16,11 +16,26 @@ def _now() -> str:
     return datetime.now(JST).isoformat()
 
 
+def _move_with_retry(src: Path, dst: Path, retries: int = 10, delay_sec: float = 0.5) -> None:
+    """shutil.move のリトライ版。
+    Windowsではウイルス対策ソフトやインデクサーが作成/移動直後のファイルを
+    一瞬だけロックすることがあり、PermissionError (WinError 32) が一過性に発生する。
+    """
+    for attempt in range(retries):
+        try:
+            shutil.move(str(src), str(dst))
+            return
+        except PermissionError:
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay_sec)
+
+
 def _recover_processing(cfg: cfg_mod.Config) -> None:
     """Move any leftover processing jobs back to pending on startup."""
     for job_file in cfg.queue_processing.glob("*.json"):
         dest = cfg.queue_pending / job_file.name
-        shutil.move(str(job_file), str(dest))
+        _move_with_retry(job_file, dest)
         print(f"[worker] recovered: {job_file.name} → pending")
 
 
@@ -38,7 +53,13 @@ def run_loop(cfg: cfg_mod.Config) -> None:
     while True:
         jobs = sorted(cfg.queue_pending.glob("*.json"))
         if jobs:
-            _process_one(jobs[0], cfg)
+            try:
+                _process_one(jobs[0], cfg)
+            except Exception:
+                # 想定外の例外でスレッド自体を落とさない（例: リトライしても解消しない
+                # ファイルロック）。ログだけ出してポーリングを継続する。
+                print(f"[worker] unexpected error, will retry:\n{traceback.format_exc()}")
+                time.sleep(cfg.poll_interval_sec)
         else:
             time.sleep(cfg.poll_interval_sec)
 
@@ -46,7 +67,7 @@ def run_loop(cfg: cfg_mod.Config) -> None:
 def _process_one(job_file: Path, cfg: cfg_mod.Config) -> None:
     # Move to processing
     proc_file = cfg.queue_processing / job_file.name
-    shutil.move(str(job_file), str(proc_file))
+    _move_with_retry(job_file, proc_file)
 
     job = json.loads(proc_file.read_text(encoding="utf-8"))
     ts_name = Path(job["ts_path"]).name
@@ -63,7 +84,7 @@ def _process_one(job_file: Path, cfg: cfg_mod.Config) -> None:
     try:
         pipeline.process_job(proc_file, cfg)
         dest = cfg.queue_done / proc_file.name
-        shutil.move(str(proc_file), str(dest))
+        _move_with_retry(proc_file, dest)
         print(f"[worker] done: {ts_name}")
     except Exception as e:
         tb = traceback.format_exc()
@@ -75,5 +96,5 @@ def _process_one(job_file: Path, cfg: cfg_mod.Config) -> None:
         data["traceback"] = tb
         proc_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         dest = cfg.queue_failed / proc_file.name
-        shutil.move(str(proc_file), str(dest))
+        _move_with_retry(proc_file, dest)
         notify.notify_discord_failure(cfg.discord_webhook_url, ts_name, str(e), tb)
