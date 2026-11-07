@@ -36,11 +36,11 @@ def extract_audio(
     outputs: list[Path] = []
 
     if audio_mode == "dual_mono":
-        streams = _probe_audio_streams(ts_path, tsreadex_bin, ffprobe_bin)
+        streams, video_start = _probe_audio_streams(ts_path, tsreadex_bin, ffprobe_bin)
         stream_channels = [ch for ch, _ in streams]
 
         if len(stream_channels) >= 2:
-            delays = _start_delays_ms(streams)
+            delays = _aligned_delays_ms(ts_path, streams, video_start, tsreadex_bin, ffprobe_bin)
             # Two separate PIDs already present -- each is single-language, plain downmix is safe.
             for ch_idx, ch_name in ((1, "1"), (2, "2")):
                 out_path = out_dir / f"{base_id}.{ch_name}.opus"
@@ -79,9 +79,9 @@ def extract_audio(
     if audio_mode == "multi_audio":
         # Separate audio components per the EPG (e.g. [二] 主音声=日本語 / 副音声=英語 as two
         # stereo PIDs 0x110/0x111). Keeping only 0:a:0 would silently drop the second language.
-        streams = _probe_audio_streams(ts_path, tsreadex_bin, ffprobe_bin)
+        streams, video_start = _probe_audio_streams(ts_path, tsreadex_bin, ffprobe_bin)
         if len(streams) >= 2:
-            delays = _start_delays_ms(streams)
+            delays = _aligned_delays_ms(ts_path, streams, video_start, tsreadex_bin, ffprobe_bin)
             for idx, ch_name in ((0, "1"), (1, "2")):
                 out_path = out_dir / f"{base_id}.{ch_name}.opus"
                 _run_audio_extraction(
@@ -117,9 +117,11 @@ def extract_audio(
     return outputs, audio_mode
 
 
-def _probe_audio_streams(ts_path: Path, tsreadex_bin: Path, ffprobe_bin: Path) -> list[tuple[int, float | None]]:
-    """(channel count, start_time) of each audio stream in the tsreadex(-a 8)-demuxed output,
-    in stream order.
+def _probe_audio_streams(
+    ts_path: Path, tsreadex_bin: Path, ffprobe_bin: Path,
+) -> tuple[list[tuple[int, float | None]], float | None]:
+    """((channel count, start_time) of each audio stream, video start_time) in the
+    tsreadex(-a 8)-demuxed output, audio streams in stream order.
 
     Uses -show_streams (flat "streams" list) rather than -select_streams a with a CSV writer:
     the latter emits each stream once per program grouping *and* once in the flat list, so it
@@ -141,11 +143,81 @@ def _probe_audio_streams(ts_path: Path, tsreadex_bin: Path, ffprobe_bin: Path) -
     try:
         streams = json.loads(proc_probe.stdout.decode(errors="replace")).get("streams", [])
     except json.JSONDecodeError:
-        return []
-    return [
+        return [], None
+    audio = [
         (int(s.get("channels", 0)), _to_float(s.get("start_time")))
         for s in streams if s.get("codec_type") == "audio"
     ]
+    video_start = next(
+        (_to_float(s.get("start_time")) for s in streams if s.get("codec_type") == "video"), None
+    )
+    return audio, video_start
+
+
+# How far an audio stream's start may legitimately sit from the video's start. 副音声 0x111
+# normally begins ~8s after the video; a stale leftover packet is off by tens of minutes to hours.
+_MAX_START_SKEW_SEC = 60.0
+
+
+def _first_pts_near(
+    ts_path: Path, audio_idx: int, ref: float, tsreadex_bin: Path, ffprobe_bin: Path,
+) -> float | None:
+    """PTS (sec) of the first packet of audio stream `audio_idx` that lies within
+    _MAX_START_SKEW_SEC of `ref`, skipping stale leading packets. None if never found."""
+    proc_ts = subprocess.Popen(
+        [str(tsreadex_bin), "-n", "-1", "-a", "8", str(ts_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    proc_probe = subprocess.Popen(
+        [str(ffprobe_bin), "-v", "quiet", *_PROBE_ARGS,
+         "-select_streams", f"a:{audio_idx}",
+         "-show_entries", "packet=pts_time", "-of", "csv=p=0", "pipe:0"],
+        stdin=proc_ts.stdout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+    proc_ts.stdout.close()
+    found = None
+    try:
+        for line in proc_probe.stdout:
+            pts = _to_float(line.strip().rstrip(","))
+            if pts is not None and abs(pts - ref) <= _MAX_START_SKEW_SEC:
+                found = pts
+                break
+    finally:
+        proc_probe.kill()
+        proc_ts.kill()
+        proc_probe.wait()
+        proc_ts.wait()
+    return found
+
+
+def _aligned_delays_ms(
+    ts_path: Path,
+    streams: list[tuple[int, float | None]],
+    video_start: float | None,
+    tsreadex_bin: Path,
+    ffprobe_bin: Path,
+) -> list[int]:
+    """_start_delays_ms, after replacing bogus stream start_times.
+
+    A [二] broadcast's 副音声 PID can carry a stale leftover packet at the head of the recording
+    whose PTS is hours away from the programme (observed: video at 4925s, 0x111's first packet at
+    1212s, real 0x111 audio from 4933s). ffprobe reports that stale PTS as the stream's start_time,
+    and trusting it padded the *other* track's head with hours of silence. Any start_time that
+    lies too far from the video's start is re-derived from the first plausible packet.
+    """
+    starts = [st for _, st in streams]
+    if video_start is not None:
+        for i, st in enumerate(starts):
+            if st is not None and abs(st - video_start) > _MAX_START_SKEW_SEC:
+                fixed = _first_pts_near(ts_path, i, video_start, tsreadex_bin, ffprobe_bin)
+                print(f"[audio] a:{i} start_time {st:.3f} is far from video start "
+                      f"{video_start:.3f}; using first nearby packet {fixed}")
+                starts[i] = fixed
+    return _start_delays_ms(starts)
 
 
 def _to_float(v) -> float | None:
@@ -155,18 +227,18 @@ def _to_float(v) -> float | None:
         return None
 
 
-def _start_delays_ms(streams: list[tuple[int, float | None]]) -> list[int]:
+def _start_delays_ms(starts: list[float | None]) -> list[int]:
     """How late each audio stream starts relative to the earliest one, in ms.
 
     Separate audio PIDs don't start together (副音声 0x111 observed ~7s after 0x110), and each
     opus file would otherwise begin at its own PID's first packet. Padding each track's head by
     this much keeps all tracks on a shared t=0.
     """
-    starts = [st for _, st in streams if st is not None]
-    if not starts:
-        return [0] * len(streams)
-    base = min(starts)
-    return [round((st - base) * 1000) if st is not None else 0 for _, st in streams]
+    known = [st for st in starts if st is not None]
+    if not known:
+        return [0] * len(starts)
+    base = min(known)
+    return [round((st - base) * 1000) if st is not None else 0 for st in starts]
 
 
 def _run_audio_extraction(

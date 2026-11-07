@@ -166,6 +166,13 @@ def run_ffprobe(ts_path: Path, ffprobe_bin: Path) -> dict:
         return {}
 
 
+def _to_float(v) -> float | None:
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def generate_base_id(meta: dict) -> str:
     if not meta.get("scheduled_start"):
         raise ValueError("scheduled_start missing from meta")
@@ -251,7 +258,12 @@ def build_meta(
         "source": {
             "original_path": str(ts_path),
             "file_size_bytes": int(fmt.get("size", 0)),
-            "duration_sec": float(fmt.get("duration", 0)),
+            # format.duration spans every PID, so one stale leftover packet (seen on the
+            # 副音声/data PIDs of [二] broadcasts, hours off the programme) inflates it
+            # (e.g. 23400s for a 30-min programme). The video stream's own duration is not
+            # affected; fall back to the container's only when the video has none.
+            "duration_sec": _to_float(video_stream.get("duration"))
+                            or _to_float(fmt.get("duration")) or 0.0,
             "bondriver": err.get("bondriver", ""),
         },
         "quality": {
