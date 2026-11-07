@@ -78,7 +78,7 @@ def _process_one(job_file: Path, cfg: cfg_mod.Config) -> None:
     data["started_at"] = _now()
     data["current_step"] = "meta"
     data["steps"] = {s: {"status": "pending"} for s in
-                     ["meta", "caption", "audio", "phash", "thumbs", "verify", "archive_raw"]}
+                     ["meta", "eit", "caption", "audio", "phash", "thumbs", "verify", "archive_raw"]}
     proc_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     try:

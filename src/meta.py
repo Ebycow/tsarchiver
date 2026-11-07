@@ -193,18 +193,20 @@ def generate_base_id(meta: dict) -> str:
     return base_id
 
 
-_FNAME_DT_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\d*-")
+# EDCB default filename (EpgTimerSrv TunerBankCtrl::ConvertRecName):
+#   "%04d%02d%02d%02d%02d%02X%02X%02d-<title>" = YYYYMMDDHHMM + BonDriverID(hex) + TunerID(hex) + ctrlID
+# There are no seconds in it: e.g. 202607281800010103- is 18:00, BonDriver 01, tuner 01, ctrl 03.
+_FNAME_DT_RE = re.compile(r"^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})[0-9A-Fa-f]{4}\d{2}-")
 
 
 def _parse_datetime_from_filename(ts_path: Path) -> str | None:
-    """Fallback for when .program.txt is missing: EDCB's default filename starts
-    with the recording start time as YYYYMMDDHHMMSS (e.g. 202607281800010103-...).
-    """
+    """Fallback for when .program.txt is missing: the reserved start time (to the minute)
+    from EDCB's default filename."""
     m = _FNAME_DT_RE.match(ts_path.name)
     if not m:
         return None
-    y, mo, d, h, mi, s = m.groups()
-    return f"{y}-{mo}-{d}T{h}:{mi}:{s}+09:00"
+    y, mo, d, h, mi = m.groups()
+    return f"{y}-{mo}-{d}T{h}:{mi}:00+09:00"
 
 
 def build_meta(

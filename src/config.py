@@ -25,6 +25,7 @@ class Config:
     thumb_height: int
     opus_bitrate: str
     discord_webhook_url: str
+    edcb_dir: Path | None  # EDCBのインストール先。EpgDataCap3.dllでTS内の番組情報(EIT)を読む。Noneなら無効
 
     @property
     def bin(self) -> Path:
@@ -41,6 +42,10 @@ class Config:
     @property
     def tsreadex(self) -> Path:
         return self.bin / "tsreadex.exe"
+
+    @property
+    def epgdatacap3(self) -> Path | None:
+        return self.edcb_dir / "EpgDataCap3.dll" if self.edcb_dir else None
 
     @property
     def caption2ass(self) -> Path:
@@ -75,4 +80,5 @@ def load(path: Path | None = None) -> Config:
         thumb_height=d["processing"]["thumb_height"],
         opus_bitrate=d["processing"]["opus_bitrate"],
         discord_webhook_url=d.get("discord", {}).get("webhook_url", ""),
+        edcb_dir=Path(d["edcb"]["dir"]) if d.get("edcb", {}).get("dir") else None,
     )

@@ -31,7 +31,7 @@
     <span class="mono">{{ current_job.get('ts_path', '') | replace('\\', '/') }}</span>
   </p>
   <div class="step-list">
-    {% for step in ['meta', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
+    {% for step in ['meta', 'eit', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
       {% set s = current_job.get('steps', {}).get(step, {}) %}
       {% if s.get('status') == 'done' %}
         <span class="step step-done">✓ {{ step }} ({{ s.get('duration_sec', '?') }}s)</span>

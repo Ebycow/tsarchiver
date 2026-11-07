@@ -27,3 +27,6 @@ opus_bitrate       = "48k"
 
 [discord]
 webhook_url = ""   # 録画データ処理失敗時に通知するDiscord webhook URL。空文字なら通知しない。
+
+[edcb]
+dir = "C:\\EDCB_64bit"   # EDCBのインストール先（EpgDataCap3.dllがある場所）。TS内の番組情報(EIT)から実際に放送された番組を調べる。空文字なら調べない。

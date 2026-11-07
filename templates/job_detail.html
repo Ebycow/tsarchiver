@@ -17,7 +17,7 @@
 <div class="card">
   <h2>ステップ</h2>
   <div class="step-list" style="margin-bottom:16px;">
-    {% for step in ['meta', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
+    {% for step in ['meta', 'eit', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
       {% set s = job.get('steps', {}).get(step, {}) %}
       {% if s.get('status') == 'done' %}
         <span class="step step-done">✓ {{ step }}</span>
@@ -32,14 +32,20 @@
   </div>
   <table>
     <tr><th>ステップ</th><th>状態</th><th>所要時間</th><th>補足</th></tr>
-    {% for step in ['meta', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
+    {% for step in ['meta', 'eit', 'caption', 'audio', 'phash', 'thumbs', 'verify', 'archive_raw'] %}
     {% set s = job.get('steps', {}).get(step, {}) %}
     <tr>
       <td>{{ step }}</td>
       <td>{{ s.get('status', '—') }}</td>
       <td>{{ s.get('duration_sec', '—') }}{% if s.get('duration_sec') %}s{% endif %}</td>
       <td style="font-size:0.82rem;color:#555;">
-        {% if step == 'caption' %}字幕: {{ s.get('caption_count', '?') }}件 / スーパー: {{ s.get('super_count', '?') }}件
+        {% if step == 'eit' %}
+          {% if s.get('error') %}エラー: {{ s.error }}
+          {% elif s.get('enabled') == false %}無効（config の [edcb] dir 未設定）
+          {% elif s.get('main_title') is not none %}放送: {{ s.main_title }}（{{ (s.main_share * 100) | round | int }}%）
+            {% if s.get('reserved_share') is not none %} / 予約番組: {{ (s.reserved_share * 100) | round | int }}%{% else %} / program.txt なし{% endif %}
+          {% endif %}
+        {% elif step == 'caption' %}字幕: {{ s.get('caption_count', '?') }}件 / スーパー: {{ s.get('super_count', '?') }}件
         {% elif step == 'audio' %}トラック数: {{ s.get('tracks', '?') }}
         {% elif step == 'phash' %}フレーム数: {{ s.get('frame_count', '?') }}
         {% endif %}

@@ -7,6 +7,7 @@ from pathlib import Path
 from . import config as cfg_mod
 from . import meta as meta_mod
 from . import caption as caption_mod
+from . import eitscan as eit_mod
 from . import audio as audio_mod
 from . import video as video_mod
 
@@ -69,6 +70,25 @@ def process_job(job_file: Path, cfg: cfg_mod.Config) -> None:
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     _update_job(job_file, {"base_id": base_id, "out_dir": str(out_dir)})
     _step_done(job_file, "meta", t0)
+
+    # ── Step 1b: eit (実際に放送されていた番組) ───────────────────
+    # program.txtはEDCBが「予約番組が放送中」と確認できたときだけ書かれる。国会中継・
+    # スポーツ延長などで予約番組が放送されなかった録画にはprogram.txtが無く、中身も別番組に
+    # なる。TS内のEIT[p/f]をサンプリングして、実際に何が放送されていたかを記録する。
+    _step_start(job_file, "eit")
+    t0 = time.time()
+    reserved = (meta["sid"], meta["eid"]) if meta.get("sid") and meta.get("eid") is not None else None
+    aired = eit_mod.scan_aired(cfg.epgdatacap3, ts_path, meta["source"]["duration_sec"], reserved)
+    meta["aired"] = aired
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    eit_extra: dict = {"enabled": aired is not None}
+    if aired and aired.get("error"):
+        eit_extra["error"] = aired["error"]
+    elif aired:
+        top = aired["events"][0] if aired["events"] else {}
+        eit_extra.update(main_title=top.get("title"), main_share=top.get("share"),
+                         reserved_share=aired["reserved_share"])
+    _step_done(job_file, "eit", t0, **eit_extra)
 
     # ── Step 2: captions ──────────────────────────────────────────
     _step_start(job_file, "caption")
