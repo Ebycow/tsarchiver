@@ -34,6 +34,20 @@ def extract_audio(
     so both languages are always archived either way.
     """
     outputs: list[Path] = []
+    streams: list[tuple[int, float | None]] | None = None
+    video_start: float | None = None
+
+    if audio_mode in ("mono", "stereo"):
+        # The EPG text (program.txt) is not the whole truth: it is missing altogether when the
+        # reserved programme didn't air (e.g. a [二] sumo broadcast overran into a news slot),
+        # so the mode then defaults to mono. Check the stream itself for a real second audio.
+        streams, video_start = _probe_audio_streams(ts_path, tsreadex_bin, ffprobe_bin)
+        if len(streams) >= 2:
+            sec = _stream_seconds(ts_path, 1, tsreadex_bin, ffprobe_bin)
+            if sec >= _MIN_SECONDARY_SEC:
+                print(f"[audio] {audio_mode} per EPG, but a:1 carries {sec:.0f}s of audio; "
+                      f"keeping it as a second track")
+                audio_mode = "multi_audio"
 
     if audio_mode == "dual_mono":
         streams, video_start = _probe_audio_streams(ts_path, tsreadex_bin, ffprobe_bin)
@@ -79,7 +93,8 @@ def extract_audio(
     if audio_mode == "multi_audio":
         # Separate audio components per the EPG (e.g. [二] 主音声=日本語 / 副音声=英語 as two
         # stereo PIDs 0x110/0x111). Keeping only 0:a:0 would silently drop the second language.
-        streams, video_start = _probe_audio_streams(ts_path, tsreadex_bin, ffprobe_bin)
+        if streams is None:
+            streams, video_start = _probe_audio_streams(ts_path, tsreadex_bin, ffprobe_bin)
         if len(streams) >= 2:
             delays = _aligned_delays_ms(ts_path, streams, video_start, tsreadex_bin, ffprobe_bin)
             for idx, ch_name in ((0, "1"), (1, "2")):
@@ -152,6 +167,41 @@ def _probe_audio_streams(
         (_to_float(s.get("start_time")) for s in streams if s.get("codec_type") == "video"), None
     )
     return audio, video_start
+
+
+# Minimum amount of audio a:1 must carry to count as a real 副音声 when the EPG doesn't list
+# one. NHK G often has the 副音声 PID 0x111 in an ordinary stereo programme too, holding only
+# the last ~6-7s of the preceding [二] programme (observed on 5 of 30 recordings); a genuine
+# 副音声 runs for (nearly) the whole programme.
+_MIN_SECONDARY_SEC = 60.0
+_AAC_FRAME_SAMPLES = 1024
+
+
+def _stream_seconds(
+    ts_path: Path, audio_idx: int, tsreadex_bin: Path, ffprobe_bin: Path,
+) -> float:
+    """Total audio carried by stream `audio_idx` (packet count x AAC frame length), in seconds.
+    Counted from packets rather than start/end PTS, which stale packets can push hours apart."""
+    proc_ts = subprocess.Popen(
+        [str(tsreadex_bin), "-n", "-1", "-a", "8", str(ts_path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    proc_probe = subprocess.run(
+        [str(ffprobe_bin), "-v", "quiet", *_PROBE_ARGS,
+         "-select_streams", f"a:{audio_idx}", "-count_packets",
+         "-show_entries", "stream=nb_read_packets,sample_rate", "-print_format", "json", "pipe:0"],
+        stdin=proc_ts.stdout,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    proc_ts.stdout.close()
+    proc_ts.wait()
+    try:
+        s = json.loads(proc_probe.stdout.decode(errors="replace"))["streams"][0]
+        return int(s["nb_read_packets"]) * _AAC_FRAME_SAMPLES / int(s.get("sample_rate") or 48000)
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError, ValueError):
+        return 0.0
 
 
 # How far an audio stream's start may legitimately sit from the video's start. 副音声 0x111

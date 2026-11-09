@@ -111,8 +111,12 @@ def process_job(job_file: Path, cfg: cfg_mod.Config) -> None:
         cfg.tsreadex, cfg.ffmpeg, cfg.ffprobe, cfg.opus_bitrate,
     )
     if actual_audio_mode != meta["audio"]["mode"]:
+        languages = meta["audio"]["languages"][:1] or ["jpn"]
+        if actual_audio_mode in ("dual_mono", "multi_audio"):
+            # 番組情報に無い副音声をストリームから見つけた（program.txt欠落など）。言語は不明
+            languages.append("und")
         meta["audio"]["mode"] = actual_audio_mode
-        meta["audio"]["languages"] = meta["audio"]["languages"][:1] or ["jpn"]
+        meta["audio"]["languages"] = languages
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     _step_done(job_file, "audio", t0, tracks=len(audio_paths))
 
